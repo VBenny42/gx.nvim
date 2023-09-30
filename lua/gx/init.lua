@@ -1,41 +1,95 @@
-local shell = {}
+local helper = require('gx.helper')
 
-function shell.execute(command, args)
-  -- TODO: This could use vim.system() in 0.10+
-  local Job = require('plenary.job')
+local keymap = vim.keymap.set
+local sysname = vim.loop.os_uname().sysname
 
-  local result, return_val = Job:new({
-    command = command,
-    args = args
-  }):sync()
+local M = {}
 
-  return return_val, result
-end
+-- search for url with handler
+local function search_for_url()
+  local line = vim.api.nvim_get_current_line()
+  local mode = vim.api.nvim_get_mode().mode
 
-function shell.execute_with_error(command, args, url)
-  local shell_args = {}
-  for _, v in ipairs(args) do
-    table.insert(shell_args, v)
-  end
-  table.insert(shell_args, url)
+  -- cut if in visual mode
+  line = helper.cut_with_visual_mode(mode, line)
 
-  local return_val, _ = shell.execute(command, shell_args)
+  -- search for url
+  local url =
+      require('gx.handler').get_url(mode, line, M.options.handlers, M.options.handler_options)
 
-  if return_val ~= 0 then
-    local ret = {}
-    for _, a in pairs(args) do
-      table.insert(ret, a)
-    end
-
-    require('gx.notifier').error(
-      'Command "' .. command .. ' ' .. table.concat(ret, ' ') .. '" not successful.'
-    )
+  if not url then
     return
   end
-  require('gx.notifier').info(
-    'Command "' .. command .. ' ' .. table.concat(shell_args, ' ') .. '" successful.'
+
+  require('gx.shell').execute_with_error(
+    M.options.open_browser_app,
+    M.options.open_browser_args,
+    url
   )
 end
 
-return shell
+-- create keybindings
+local function bind_keys()
+  vim.g.netrw_nogx = 1 -- disable netrw gx
 
+  local opts = { noremap = true, silent = true }
+  keymap('n', 'gx', search_for_url, opts)
+  keymap('v', 'gx', search_for_url, opts)
+end
+
+-- get the app for opening the webbrowser
+local function get_open_browser_app()
+  local app
+  if sysname == 'Darwin' then
+    app = 'open'
+  elseif sysname == 'Linux' then
+    app = 'xdg-open'
+  elseif sysname == 'Windows_NT' then
+    app = 'powershell.exe'
+  end
+  return app
+end
+
+-- get the args for opening the webbrowser
+local function get_open_browser_args(args)
+  if sysname == 'Windows_NT' then
+    local win_args = { 'start', 'explorer.exe' }
+    return helper.concat_tables(win_args, args)
+  end
+  return args
+end
+
+local function with_defaults(options)
+  options = options or {}
+  options.handlers = options.handlers or {}
+  options.handler_options = options.handler_options or {}
+
+  return {
+    open_browser_app = options.open_browser_app or get_open_browser_app(),
+    open_browser_args = get_open_browser_args(options.open_browser_args or {}),
+    handlers = {
+      brewfile = helper.ternary(options.handlers.brewfile ~= nil, options.handlers.brewfile, true),
+      plugin = helper.ternary(options.handlers.plugin ~= nil, options.handlers.plugin, true),
+      github = helper.ternary(options.handlers.github ~= nil, options.handlers.github, true),
+      package_json = helper.ternary(
+        options.handlers.package_json ~= nil,
+        options.handlers.package_json,
+        true
+      ),
+      search = helper.ternary(options.handlers.search ~= nil, options.handlers.search, true)
+    },
+    handler_options = {
+      search_engine = options.handler_options.search_engine or 'google'
+    }
+  }
+end
+
+-- setup function
+function M.setup(options)
+  M.options = with_defaults(options)
+  bind_keys()
+end
+
+M.options = nil
+
+return M

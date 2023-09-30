@@ -2,11 +2,11 @@ local shell = {}
 
 function shell.execute(command, args)
   -- TODO: This could use vim.system() in 0.10+
-  local Job = require("plenary.job")
+  local Job = require('plenary.job')
 
   local result, return_val = Job:new({
     command = command,
-    args = args,
+    args = args
   }):sync()
 
   return return_val, result
@@ -27,10 +27,14 @@ function shell.execute_with_error(command, args, url)
       table.insert(ret, a)
     end
 
-    require("gx.notifier").error(
-      'Command "' .. command .. " " .. table.concat(ret, " ") .. '" not successful.'
+    require('gx.notifier').error(
+      'Command "' .. command .. ' ' .. table.concat(ret, ' ') .. '" not successful.'
     )
+    return
   end
+  require('gx.notifier').info(
+    'Command "' .. command .. ' ' .. table.concat(shell_args, ' ') .. '" successful.'
+  )
 end
 
 return shell
